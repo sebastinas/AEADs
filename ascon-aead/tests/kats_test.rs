@@ -5,7 +5,6 @@ use ascon_aead::{
     aead::{Aead, AeadInPlace, KeyInit, Payload},
     Ascon128, Ascon128a, Ascon80pq, Key, Nonce,
 };
-use spectral::prelude::{asserting, OrderedAssertions, ResultAssertions};
 use std::collections::HashMap;
 use std::include_str;
 
@@ -39,29 +38,45 @@ impl TestVector {
     }
 }
 
-fn run_tv<A: KeyInit + AeadInPlace>(tv: TestVector) {
-    let core = A::new(Key::<A>::from_slice(&tv.key));
-    asserting(format!("Test Vector {} encryption", tv.count).as_str())
-        .that(&core.encrypt(
-            Nonce::<A>::from_slice(&tv.nonce),
+fn run_tv2<A: KeyInit + AeadInPlace>(
+    key: &[u8],
+    nonce: &[u8],
+    plaintext: &[u8],
+    associated_data: &[u8],
+    ciphertext: &[u8],
+) {
+    let core = A::new(Key::<A>::from_slice(key));
+    let ctxt = core
+        .encrypt(
+            Nonce::<A>::from_slice(nonce),
             Payload {
-                msg: &tv.plaintext,
-                aad: &tv.associated_data,
+                msg: plaintext,
+                aad: associated_data,
             },
-        ))
-        .is_ok()
-        .is_equal_to(&tv.ciphertext);
+        )
+        .expect("Successful encryption");
+    assert_eq!(ctxt, ciphertext);
 
-    asserting(format!("Test Vector {} decryption", tv.count).as_str())
-        .that(&core.decrypt(
-            Nonce::<A>::from_slice(&tv.nonce),
+    let ptxt = core
+        .decrypt(
+            Nonce::<A>::from_slice(nonce),
             Payload {
-                msg: &tv.ciphertext,
-                aad: &tv.associated_data,
+                msg: ciphertext,
+                aad: associated_data,
             },
-        ))
-        .is_ok()
-        .is_equal_to(&tv.plaintext);
+        )
+        .expect("Successful decryption");
+    assert_eq!(ptxt, plaintext);
+}
+
+fn run_tv<A: KeyInit + AeadInPlace>(tv: TestVector) {
+    run_tv2::<A>(
+        &tv.key,
+        &tv.nonce,
+        &tv.plaintext,
+        &tv.associated_data,
+        &tv.ciphertext,
+    )
 }
 
 fn parse_tvs(tvs: &str) -> Vec<TestVector> {
@@ -89,9 +104,7 @@ fn parse_tvs(tvs: &str) -> Vec<TestVector> {
         );
     }
 
-    asserting!("Test Vectors available")
-        .that(&ret.len())
-        .is_greater_than(0);
+    assert!(!ret.is_empty(), "Test vectors available.");
     ret
 }
 
